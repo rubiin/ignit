@@ -1,0 +1,94 @@
+version: 2
+
+project_name: gitignorer
+
+before:
+  hooks:
+    # Generate shell completion scripts once, ahead of all builds, so they
+    # can be bundled into archives and installed by the AUR package.
+    - mkdir -p .buildcache/completions
+    - sh -c 'go run . completion bash > .buildcache/completions/gitignorer.bash'
+    - sh -c 'go run . completion zsh > .buildcache/completions/_gitignorer'
+    - sh -c 'go run . completion fish > .buildcache/completions/gitignorer.fish'
+    - sh -c 'go run . completion pwsh > .buildcache/completions/_gitignorer.ps1'
+
+builds:
+  - env:
+      - CGO_ENABLED=0
+    # main.go declares `version`; release builds override it here.
+    ldflags:
+      - -s -w
+      - -X main.version={{.Version}}
+    goos:
+      - linux
+      - windows
+      - darwin
+
+
+
+archives:
+  - formats: [tar.gz]
+    # this name template makes the OS and Arch compatible with the results of `uname`.
+    name_template: >-
+      {{ .ProjectName }}_
+      {{- title .Os }}_
+      {{- if eq .Arch "amd64" }}x86_64
+      {{- else if eq .Arch "386" }}i386
+      {{- else }}{{ .Arch }}{{ end }}
+      {{- if .Arm }}v{{ .Arm }}{{ end }}
+    # use zip for windows archives
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      # Bundle the generated completions as a completions/ folder in the archive.
+      - src: .buildcache/completions/*
+        dst: completions
+        strip_parent: true
+
+changelog:
+  sort: desc
+  use: git
+
+  groups:
+    - title: 🚀 New Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: "🐛 Bug Fixes"
+      regexp: '^.*?bug(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: Others
+      order: 999
+
+
+aurs:
+  - name: gitignorer-bin
+    homepage: https://github.com/rubiin/gitignorer
+    description: Launch your project folders directly in your editor of choice from a single command.
+    license: GPL-3.0-only
+    maintainers:
+      - "rubiin <roobin.bhandari@gmail.com>"
+    git_url: ssh://aur@aur.archlinux.org/gitignorer-bin.git
+    private_key: "{{ .Env.AUR_KEY }}"
+    provides:
+      - gitignorer
+    conflicts:
+      - gitignorer
+      - gitignorer-git
+    package: |-
+      # bin
+      install -Dm755 "./gitignorer" "${pkgdir}/usr/bin/gitignorer"
+      # license
+      install -Dm644 "./LICENSE" "${pkgdir}/usr/share/licenses/gitignorer/LICENSE"
+      # shell completions
+      install -Dm644 "./completions/gitignorer.bash" "${pkgdir}/usr/share/bash-completion/completions/gitignorer"
+      install -Dm644 "./completions/_gitignorer" "${pkgdir}/usr/share/zsh/site-functions/_gitignorer"
+      install -Dm644 "./completions/gitignorer.fish" "${pkgdir}/usr/share/fish/vendor_completions.d/gitignorer.fish"
+
+release:
+  footer: >-
+
+    ---
+
+    Released by [GoReleaser](https://github.com/goreleaser/goreleaser).

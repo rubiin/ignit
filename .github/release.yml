@@ -1,19 +1,33 @@
-# Name of the workflow
 name: Release
 
-# Run on every commit tag which begins with "v" (e.g., "v0.1.4")
 on:
   push:
     tags:
       - "v*"
 
-# Automatically create a GitHub Release, with release details specified (the relevant commits)
+permissions:
+  contents: write
+
 jobs:
   release:
-    name: "Release"
-    runs-on: "ubuntu-latest"
+    runs-on: ubuntu-latest
     steps:
-      - uses: "marvinpinto/action-automatic-releases@latest"
+      - name: Checkout
+        uses: actions/checkout@v7
         with:
-          repo_token: "${{ secrets.GITHUB_TOKEN }}"
-          prerelease: false
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Run GoReleaser
+        uses: goreleaser/goreleaser-action@v7
+        with:
+          distribution: goreleaser
+          version: "~> v2"
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.TOKEN_GITHUB }}
+          AUR_KEY: ${{ secrets.AUR_KEY }}

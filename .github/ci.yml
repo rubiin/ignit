@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          # Fetch full history so git describe can resolve tags for the version string.
+          fetch-depth: 0
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+
+      - name: Install golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: latest
+
+      - name: Lint
+        run: golangci-lint run
+
+        
+      - name: Test
+        run: go test ./...
+
+      - name: Build
+        run: |
+          VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo dev)
+          echo "Building version: ${VERSION}"
+          go build -ldflags "-s -w -X main.version=${VERSION}" -o projecto .
