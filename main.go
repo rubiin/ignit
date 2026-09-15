@@ -8,6 +8,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -16,6 +17,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/urfave/cli/v3"
 
 	"github.com/rubiin/ignit/internal/envlist"
 	"github.com/rubiin/ignit/internal/envs"
@@ -158,51 +160,75 @@ func (m downloadingModel) View() string {
 	return b.String()
 }
 
-func main() {
-	for _, arg := range os.Args[1:] {
-		if arg == "-no-cache" {
-			gitignore.BypassCache = true
-		}
-	}
-
-	if len(os.Args) > 1 {
-		switch os.Args[1] {
-		case "-clear-cache":
-			dir, err := gitignore.ClearCache()
-			if err != nil {
-				log.Fatalf("error: %v", err)
-			}
-			fmt.Printf("cleared template cache at %s\n", dir)
-			return
-		case "-update-list":
-			if err := envlist.Update(); err != nil {
-				log.Fatalf("error: %v", err)
-			}
-			return
-		case "-v", "--version":
-			fmt.Printf("ignit %s\n", version)
-			return
-		}
-	}
-
+func runPicker() error {
 	program := tea.NewProgram(picker.New("Select environment", envs.List), tea.WithMouseCellMotion())
 	finalModel, err := program.Run()
 	if err != nil {
-		log.Fatalf("could not run program: %v", err)
+		return fmt.Errorf("could not run program: %w", err)
 	}
 
 	choices := finalModel.(picker.Model).Choices()
 	if len(choices) == 0 {
-		return
+		return nil
 	}
 
 	downloadProgram := tea.NewProgram(newDownloadingModel(choices))
 	downloadFinal, err := downloadProgram.Run()
 	if err != nil {
-		log.Fatalf("could not run download program: %v", err)
+		return fmt.Errorf("could not run download program: %w", err)
 	}
 
 	if dm, ok := downloadFinal.(downloadingModel); ok && dm.err != nil {
-		log.Fatalf("error: %v", dm.err)
+		return dm.err
+	}
+	return nil
+}
+
+func newCommand() *cli.Command {
+	return &cli.Command{
+		Name:                  "ignit",
+		Usage:                 "quickly generate .gitignore files",
+		Version:               version,
+		EnableShellCompletion: true,
+		Flags: []cli.Flag{
+			&cli.BoolFlag{
+				Name:  "clear-cache",
+				Usage: "delete the on-disk template cache and exit",
+			},
+			&cli.BoolFlag{
+				Name:  "no-cache",
+				Usage: "bypass the template cache: always fetch from the network (still refreshes the cache)",
+				Action: func(_ context.Context, _ *cli.Command, _ bool) error {
+					gitignore.BypassCache = true
+					return nil
+				},
+			},
+			&cli.BoolFlag{
+				Name:  "update-list",
+				Usage: "re-fetch the template list from gitignore.io and regenerate the embedded list",
+			},
+		},
+		Action: func(_ context.Context, cmd *cli.Command) error {
+			// Flags that do their job and exit are handled here: flag
+			// Actions alone would still fall through to the picker.
+			switch {
+			case cmd.Bool("update-list"):
+				return envlist.Update()
+			case cmd.Bool("clear-cache"):
+				dir, err := gitignore.ClearCache()
+				if err != nil {
+					return err
+				}
+				fmt.Printf("cleared template cache at %s\n", dir)
+				return nil
+			}
+			return runPicker()
+		},
+	}
+}
+
+func main() {
+	if err := newCommand().Run(context.Background(), os.Args); err != nil {
+		log.Fatalf("error: %v", err)
 	}
 }
