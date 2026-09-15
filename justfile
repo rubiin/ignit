@@ -27,10 +27,6 @@ fmt:
 lint:
     golangci-lint run
 
-# Print the completion script for a shell (bash, zsh, fish, powershell)
-completions shell="bash":
-    ./ignit completion {{shell}}
-
 # Clean build artifacts
 clean:
     rm -f ignit

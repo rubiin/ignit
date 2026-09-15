@@ -2,16 +2,6 @@ version: 2
 
 project_name: ignit
 
-before:
-  hooks:
-    # Generate shell completion scripts once, ahead of all builds, so they
-    # can be bundled into archives and installed by the AUR package.
-    - mkdir -p .buildcache/completions
-    - sh -c 'go run . completion bash > .buildcache/completions/ignit.bash'
-    - sh -c 'go run . completion zsh > .buildcache/completions/_ignit'
-    - sh -c 'go run . completion fish > .buildcache/completions/ignit.fish'
-    - sh -c 'go run . completion pwsh > .buildcache/completions/_ignit.ps1'
-
 builds:
   - env:
       - CGO_ENABLED=0
@@ -23,8 +13,6 @@ builds:
       - linux
       - windows
       - darwin
-
-
 
 archives:
   - formats: [tar.gz]
@@ -42,10 +30,6 @@ archives:
         formats: [zip]
     files:
       - LICENSE
-      # Bundle the generated completions as a completions/ folder in the archive.
-      - src: .buildcache/completions/*
-        dst: completions
-        strip_parent: true
 
 changelog:
   sort: desc
@@ -81,10 +65,6 @@ aurs:
       install -Dm755 "./ignit" "${pkgdir}/usr/bin/ignit"
       # license
       install -Dm644 "./LICENSE" "${pkgdir}/usr/share/licenses/ignit/LICENSE"
-      # shell completions
-      install -Dm644 "./completions/ignit.bash" "${pkgdir}/usr/share/bash-completion/completions/ignit"
-      install -Dm644 "./completions/_ignit" "${pkgdir}/usr/share/zsh/site-functions/_ignit"
-      install -Dm644 "./completions/ignit.fish" "${pkgdir}/usr/share/fish/vendor_completions.d/ignit.fish"
 
 release:
   footer: >-
