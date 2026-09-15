@@ -184,6 +184,30 @@ func runPicker() error {
 	return nil
 }
 
+// runPickerFunc and updateListFunc are seams for runRoot, so tests can run
+// the CLI end-to-end without touching the TUI or the network.
+var (
+	runPickerFunc  = runPicker
+	updateListFunc = envlist.Update
+)
+
+// runRoot is the CLI's root action: dispatch the "do X and exit" flags, or
+// fall through to the interactive picker.
+func runRoot(_ context.Context, cmd *cli.Command) error {
+	switch {
+	case cmd.Bool("update-list"):
+		return updateListFunc()
+	case cmd.Bool("clear-cache"):
+		dir, err := gitignore.ClearCache()
+		if err != nil {
+			return err
+		}
+		fmt.Printf("cleared template cache at %s\n", dir)
+		return nil
+	}
+	return runPickerFunc()
+}
+
 func newCommand() *cli.Command {
 	return &cli.Command{
 		Name:                  "ignit",
@@ -208,22 +232,7 @@ func newCommand() *cli.Command {
 				Usage: "re-fetch the template list from gitignore.io and regenerate the embedded list",
 			},
 		},
-		Action: func(_ context.Context, cmd *cli.Command) error {
-			// Flags that do their job and exit are handled here: flag
-			// Actions alone would still fall through to the picker.
-			switch {
-			case cmd.Bool("update-list"):
-				return envlist.Update()
-			case cmd.Bool("clear-cache"):
-				dir, err := gitignore.ClearCache()
-				if err != nil {
-					return err
-				}
-				fmt.Printf("cleared template cache at %s\n", dir)
-				return nil
-			}
-			return runPicker()
-		},
+		Action: runRoot,
 	}
 }
 

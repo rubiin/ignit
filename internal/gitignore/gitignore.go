@@ -35,7 +35,17 @@ var (
 	// BypassCache makes FetchSource skip cache reads entirely: every fetch
 	// goes to the network and refreshes the cache entry on success.
 	BypassCache = false
+	// HTTPClient is the client used for template fetches. The timeout keeps
+	// a hung connection from stalling the download screen indefinitely.
+	HTTPClient = &http.Client{Timeout: 10 * time.Second}
+	// MaxRetries is how many times a failed template fetch is retried
+	// before the error surfaces.
+	MaxRetries = 1
 )
+
+// retryDelay is how long to wait between fetch attempts, a var so tests can
+// zero it.
+var retryDelay = 500 * time.Millisecond
 
 const (
 	// header opens the merged .gitignore.
@@ -95,9 +105,30 @@ func FetchSource(language string) (string, Source, error) {
 }
 
 // fetchRemote downloads the raw template for a single language, bypassing
-// the cache.
+// the cache. A failed attempt is retried up to MaxRetries times before the
+// last error surfaces.
 func fetchRemote(language string) (string, error) {
-	resp, err := http.Get(API + "/" + language)
+	attempts := MaxRetries + 1
+	if attempts < 1 {
+		attempts = 1
+	}
+	var lastErr error
+	for attempt := 0; attempt < attempts; attempt++ {
+		if attempt > 0 {
+			time.Sleep(retryDelay)
+		}
+		body, err := fetchOnce(language)
+		if err == nil {
+			return body, nil
+		}
+		lastErr = err
+	}
+	return "", lastErr
+}
+
+// fetchOnce performs a single template download attempt.
+func fetchOnce(language string) (string, error) {
+	resp, err := HTTPClient.Get(API + "/" + language)
 	if err != nil {
 		return "", fmt.Errorf("failed to fetch gitignore for %s: %w", language, err)
 	}

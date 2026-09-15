@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -60,16 +61,20 @@ func apiBody(section string) string {
 }
 
 // useCacheDir points CacheDir at a fresh temp directory and restores the
-// original tunables after the test.
+// original tunables after the test. It also zeroes retryDelay so tests that
+// exercise failure paths stay fast.
 func useCacheDir(t *testing.T) string {
 	t.Helper()
 	dir := t.TempDir()
 	originalDir, originalTTL, originalUser := CacheDir, CacheTTL, userCacheDir
+	originalDelay := retryDelay
 	CacheDir = dir
+	retryDelay = 0
 	t.Cleanup(func() {
 		CacheDir = originalDir
 		CacheTTL = originalTTL
 		userCacheDir = originalUser
+		retryDelay = originalDelay
 	})
 	return dir
 }
@@ -551,5 +556,89 @@ func putRawCache(t *testing.T, dir string, language string, body string, fetched
 	}
 	if err := os.WriteFile(cachePath(dir, language), raw, 0o644); err != nil {
 		t.Fatalf("WriteFile() error = %v", err)
+	}
+}
+
+// flakyAPI serves body only after failTimes connection failures, then
+// succeeds — simulating a transient outage.
+func flakyAPI(t *testing.T, failTimes int, body string) *int32 {
+	t.Helper()
+	var attempts int32
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if atomic.AddInt32(&attempts, 1) <= int32(failTimes) {
+			// Hijack to simulate a connection-level failure.
+			if hj, ok := w.(http.Hijacker); ok {
+				if conn, _, err := hj.Hijack(); err == nil {
+					_ = conn.Close() // drop without response
+				}
+			}
+			return
+		}
+		_, _ = fmt.Fprint(w, body)
+	}))
+	original := API
+	API = server.URL
+	t.Cleanup(func() {
+		API = original
+		server.Close()
+	})
+	return &attempts
+}
+
+func TestFetchRetriesTransientFailure(t *testing.T) {
+	useCacheDir(t)
+	attempts := flakyAPI(t, 1, apiBody("### Go ###\n*.exe"))
+
+	original := MaxRetries
+	MaxRetries = 2
+	t.Cleanup(func() { MaxRetries = original })
+
+	body, err := Fetch("go")
+	if err != nil {
+		t.Fatalf("Fetch() error = %v", err)
+	}
+	if !strings.Contains(body, "### Go ###") {
+		t.Errorf("Fetch() body = %q, want template section", body)
+	}
+	if got := atomic.LoadInt32(attempts); got != 2 {
+		t.Errorf("fetch attempts = %d, want 2 (one failure, one success)", got)
+	}
+}
+
+func TestFetchRetriesExhausted(t *testing.T) {
+	useCacheDir(t)
+	attempts := flakyAPI(t, 99, apiBody("### Go ###\n*.exe"))
+
+	original := MaxRetries
+	MaxRetries = 2
+	t.Cleanup(func() { MaxRetries = original })
+
+	if _, err := Fetch("go"); err == nil {
+		t.Fatal("Fetch() expected error after exhausting retries, got nil")
+	}
+	if got := atomic.LoadInt32(attempts); got != 3 {
+		t.Errorf("fetch attempts = %d, want 3 (initial + 2 retries)", got)
+	}
+}
+
+func TestFetchRetriesZeroSucceedsFirstTry(t *testing.T) {
+	useCacheDir(t)
+	attempts := flakyAPI(t, 0, apiBody("### Go ###\n*.exe"))
+
+	original := MaxRetries
+	MaxRetries = 0
+	t.Cleanup(func() { MaxRetries = original })
+
+	if _, err := Fetch("go"); err != nil {
+		t.Fatalf("Fetch() error = %v", err)
+	}
+	if got := atomic.LoadInt32(attempts); got != 1 {
+		t.Errorf("fetch attempts = %d, want 1", got)
+	}
+}
+
+func TestHTTPClientHasTimeout(t *testing.T) {
+	if HTTPClient.Timeout <= 0 {
+		t.Errorf("HTTPClient.Timeout = %v, want a positive timeout", HTTPClient.Timeout)
 	}
 }
