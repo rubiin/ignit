@@ -1,11 +1,11 @@
 default:
     @just --list
 
-# Build the gitignorer binary with version info from git
+# Build the ignit binary with version info from git
 build:
     #!/usr/bin/env sh
     VERSION=$(git describe --tags --always --dirty 2>/dev/null || echo dev)
-    CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=${VERSION}" -o gitignorer .
+    CGO_ENABLED=0 go build -ldflags "-s -w -X main.version=${VERSION}" -o ignit .
 
 # Run all tests
 test:
@@ -29,8 +29,8 @@ lint:
 
 # Print the completion script for a shell (bash, zsh, fish, powershell)
 completions shell="bash":
-    ./gitignorer completion {{shell}}
+    ./ignit completion {{shell}}
 
 # Clean build artifacts
 clean:
-    rm -f gitignorer
+    rm -f ignit
