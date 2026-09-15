@@ -54,6 +54,15 @@ just test    # run tests
 just lint    # golangci-lint
 ```
 
+## Project layout
+
+```
+main.go              entry point: flags, program flow, .gitignore download
+internal/picker/     fuzzy-filtering Bubble Tea select list
+internal/envlist/    fetches and regenerates the environment list
+internal/envs/       embedded environment snapshot (generated)
+```
+
 ## License
 
 [GPL-3.0](./LICENSE)
