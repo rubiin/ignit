@@ -1,6 +1,11 @@
 # Ignit
 
-<img src="./img.png" align="right" height="150"/>
+
+![CI](https://github.com/rubiin/ignit/actions/workflows/ci.yml/badge.svg)
+![AUR version](https://img.shields.io/aur/version/ignit-bin)
+![Release](https://img.shields.io/github/v/release/rubiin/ignit)
+
+<img src="./img.png" align="center" height="150"/>
 
 A CLI app to quickly generate `.gitignore` files for your projects.
 
