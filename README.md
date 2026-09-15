@@ -10,7 +10,9 @@
 A CLI app to quickly generate `.gitignore` files for your projects.
 
 Pick your environment from a searchable list and ignit writes a ready-made
-`.gitignore` in your current directory.
+`.gitignore` in your current directory. Select several environments (space to
+toggle) and ignit downloads each template individually and merges them into a
+single `.gitignore` — with section order and headers controlled locally.
 
 ## Features
 
@@ -18,6 +20,17 @@ Pick your environment from a searchable list and ignit writes a ready-made
   picker works fully offline. The network is only used when actually writing
   the `.gitignore`.
 - **Fuzzy search** — start typing to filter the list.
+- **Multi-select** — toggle as many environments as you want; ignit fetches
+  templates concurrently (bounded pool) and merges them client-side, keeping
+  sections in your selection order under a single ignit header.
+- **Smart merge** — identical ignore patterns shared across templates are
+  emitted only once (first occurrence wins); comments and section headers are
+  always kept.
+- **Offline-friendly downloads** — fetched templates are cached on disk
+  (per-user cache dir) with a 24h freshness window: repeated runs with the
+  same selection skip the network entirely, and if the API is unreachable a
+  stale cached template is used instead of failing. The download screen marks
+  each template as `downloaded` or `from cache` as it completes.
 - **Always fresh** — the embedded list can be regenerated from
   [toptal/gitignore.io](https://github.com/toptal/gitignore.io) with a single
   command.
@@ -49,11 +62,13 @@ which you can choose what you want in your gitignore.
 
 | Flag           | Description                                                              |
 | -------------- | ------------------------------------------------------------------------ |
+| `-clear-cache` | Delete the on-disk template cache and exit                               |
+| `-no-cache`    | Bypass the template cache: always fetch from the network (still refreshes the cache) |
 | `-update-list` | Re-fetch the template list from gitignore.io and regenerate the embedded list |
 | `-v`, `--version` | Print the version                                                     |
 
-Keyboard shortcuts: `↑`/`↓` to move, `/` to filter, `enter` to select,
-`ctrl+c` to quit.
+Keyboard shortcuts: `↑`/`↓` to move, type to filter, `space` to toggle an
+entry, `enter` to select, `ctrl+c` to quit.
 
 ## Building from source
 
@@ -68,8 +83,9 @@ just lint    # golangci-lint
 ## Project layout
 
 ```
-main.go              entry point: flags, program flow, .gitignore download
-internal/picker/     fuzzy-filtering Bubble Tea select list
+main.go              entry point: flags, program flow, .gitignore write
+internal/picker/     fuzzy-filtering Bubble Tea select list with multi-select
+internal/gitignore/  template fetching (disk cache, bounded-concurrency) and merging
 internal/envlist/    fetches and regenerates the environment list
 internal/envs/       embedded environment snapshot (generated)
 ```

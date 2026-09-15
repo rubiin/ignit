@@ -1,6 +1,6 @@
 // Package picker provides a fuzzy-filtering select list built with
-// Bubble Tea: a filter input, highlighted matches, a cursor, and a
-// scrollable 10-row window.
+// Bubble Tea: a filter input, highlighted matches, a cursor, a
+// scrollable 10-row window, and space-bar multi-select.
 package picker
 
 import (
@@ -83,8 +83,9 @@ type Model struct {
 	offset   int   // first visible position within filtered
 	input    textinput.Model
 	styles   pickerStyles
-	choice   string // accepted choice, empty when none
-	quit     bool   // set once a choice is made or cancelled
+	choice   string       // single accepted choice, empty when none
+	selected map[int]bool // toggled choice indices for multi-select
+	quit     bool         // set once a choice is made or cancelled
 }
 
 // New builds a picker for the given choices.
@@ -97,19 +98,33 @@ func New(label string, choices []string) Model {
 	ti.Width = 40
 
 	m := Model{
-		label:   label,
-		choices: choices,
-		input:   ti,
-		styles:  newPickerStyles(),
+		label:    label,
+		choices:  choices,
+		input:    ti,
+		styles:   newPickerStyles(),
+		selected: make(map[int]bool),
 	}
 	m.applyFilter()
 	return m
 }
 
-// Choice returns the accepted choice, or the empty string when the picker
-// was cancelled or nothing was selected.
-func (m Model) Choice() string {
-	return m.choice
+// Choices returns the accepted choices in list order. With nothing toggled,
+// enter behaves as single-select and returns the highlighted entry alone;
+// when the picker was cancelled it returns nil.
+func (m Model) Choices() []string {
+	if len(m.selected) > 0 {
+		var out []string
+		for i, choice := range m.choices {
+			if m.selected[i] {
+				out = append(out, choice)
+			}
+		}
+		return out
+	}
+	if m.choice == "" {
+		return nil
+	}
+	return []string{m.choice}
 }
 
 // clampView keeps the cursor inside the visible window by shifting offset,
@@ -165,11 +180,26 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m, tea.Quit
 		case tea.KeyEnter:
 			if len(m.filtered) > 0 {
-				m.choice = m.choices[m.filtered[m.cursor]]
+				if len(m.selected) == 0 {
+					m.choice = m.choices[m.filtered[m.cursor]]
+				}
 				m.quit = true
 				return m, tea.Quit
 			}
 			return m, nil // no matches: ignore enter
+		case tea.KeySpace:
+			// Toggle the highlighted entry, then advance so consecutive
+			// rows can be toggled without moving first.
+			if len(m.filtered) > 0 {
+				index := m.filtered[m.cursor]
+				if m.selected[index] {
+					delete(m.selected, index)
+				} else {
+					m.selected[index] = true
+				}
+				m.moveCursor(1)
+			}
+			return m, nil
 		case tea.KeyUp:
 			m.moveCursor(-1)
 			return m, nil
@@ -223,13 +253,18 @@ func (m Model) View() string {
 		style := m.styles.item
 		matchStyle := m.styles.match
 		prefix := "  "
+		marker := "[ ]"
 		if pos == m.cursor {
 			style = m.styles.selected
 			matchStyle = m.styles.matchSelected
 			prefix = "> "
 		}
+		if m.selected[index] {
+			marker = "[x]"
+		}
 		indices, _ := fuzzyMatchIndices(pattern, choice)
 		b.WriteString(prefix)
+		b.WriteString(marker + " ")
 		b.WriteString(style.Render(highlight(choice, indices, matchStyle)))
 		b.WriteString("\n")
 	}
@@ -237,10 +272,13 @@ func (m Model) View() string {
 	// Scroll indicator, shown only when entries are hidden in either
 	// direction.
 	var indicator string
-	if m.offset > 0 || end < len(m.filtered) {
-		indicator = fmt.Sprintf(" (%d-%d of %d)", m.offset+1, end, len(m.filtered))
+	if len(m.selected) > 0 {
+		indicator = fmt.Sprintf(" (%d selected)", len(m.selected))
 	}
-	b.WriteString(m.styles.hint.Render("(type to filter, up/down or pgup/pgdn to move, enter to select, esc to cancel)" + indicator))
+	if m.offset > 0 || end < len(m.filtered) {
+		indicator += fmt.Sprintf(" (%d-%d of %d)", m.offset+1, end, len(m.filtered))
+	}
+	b.WriteString(m.styles.hint.Render("(type to filter, up/down or pgup/pgdn to move, space to toggle, enter to select, esc to cancel)" + indicator))
 	return b.String()
 }
 

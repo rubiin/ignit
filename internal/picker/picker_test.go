@@ -360,13 +360,13 @@ func TestPickModelEnterSelects(t *testing.T) {
 	m := newTestPicker()
 	m = updatePicker(m, tea.KeyDown) // cursor on "python"
 
-	if got := m.Choice(); got != "" {
-		t.Fatalf("before enter: choice = %q, want empty", got)
+	if got := m.Choices(); got != nil {
+		t.Fatalf("before enter: choices = %v, want empty", got)
 	}
 
 	m = updatePicker(m, tea.KeyEnter)
-	if got := m.Choice(); got != "python" {
-		t.Errorf("choice after enter = %q, want python", got)
+	if got := m.Choices(); !reflect.DeepEqual(got, []string{"python"}) {
+		t.Errorf("choices after enter = %v, want [python]", got)
 	}
 	if !m.quit {
 		t.Error("quit should be set after enter")
@@ -379,8 +379,8 @@ func TestPickModelEnterWithNoMatches(t *testing.T) {
 	m.applyFilter()
 
 	m = updatePicker(m, tea.KeyEnter)
-	if got := m.Choice(); got != "" || m.quit {
-		t.Errorf("enter with no matches should be ignored, got choice = %q, quit = %v", got, m.quit)
+	if got := m.Choices(); got != nil || m.quit {
+		t.Errorf("enter with no matches should be ignored, got choices = %v, quit = %v", got, m.quit)
 	}
 }
 
@@ -388,8 +388,8 @@ func TestPickModelEscapeCancels(t *testing.T) {
 	for _, key := range []tea.KeyType{tea.KeyEsc, tea.KeyCtrlC} {
 		m := newTestPicker()
 		m = updatePicker(m, key)
-		if got := m.Choice(); got != "" {
-			t.Errorf("choice = %q after %v, want empty", got, key)
+		if got := m.Choices(); got != nil {
+			t.Errorf("choices = %v after %v, want empty", got, key)
 		}
 		if !m.quit {
 			t.Errorf("quit should be set after %v", key)
@@ -452,5 +452,98 @@ func TestPickModelInitReturnsBlink(t *testing.T) {
 	m := newTestPicker()
 	if cmd := m.Init(); cmd == nil {
 		t.Error("Init() should return the blink command")
+	}
+}
+
+func TestPickModelSpaceTogglesSelection(t *testing.T) {
+	m := newTestPicker()
+
+	// Space toggles "go" and advances the cursor to "python".
+	m = updatePicker(m, tea.KeySpace)
+	if m.cursor != 1 {
+		t.Errorf("cursor after space = %d, want 1 (advanced)", m.cursor)
+	}
+	if got := m.Choices(); !reflect.DeepEqual(got, []string{"go"}) {
+		t.Errorf("Choices() after one toggle = %v, want [go]", got)
+	}
+
+	// Toggle the same row again to deselect.
+	m = updatePicker(m, tea.KeyUp)
+	m = updatePicker(m, tea.KeySpace)
+	if got := m.Choices(); got != nil {
+		t.Errorf("Choices() after untoggle = %v, want nil", got)
+	}
+}
+
+func TestPickModelSpaceTogglesMultiple(t *testing.T) {
+	m := newTestPicker()
+
+	// Toggle "go" then "python"; space advances after each toggle.
+	m = updatePicker(m, tea.KeySpace)
+	m = updatePicker(m, tea.KeySpace)
+
+	if got := m.Choices(); !reflect.DeepEqual(got, []string{"go", "python"}) {
+		t.Errorf("Choices() = %v, want [go python]", got)
+	}
+	if view := m.View(); !strings.Contains(view, "(2 selected)") {
+		t.Errorf("View() should show '(2 selected)', got:\n%s", view)
+	}
+}
+
+func TestPickModelEnterWithSelectionReturnsSelection(t *testing.T) {
+	m := newTestPicker()
+	m = updatePicker(m, tea.KeySpace) // select "go"
+
+	m = updatePicker(m, tea.KeyEnter)
+	if !m.quit {
+		t.Error("quit should be set after enter with selections")
+	}
+	if got := m.Choices(); !reflect.DeepEqual(got, []string{"go"}) {
+		t.Errorf("Choices() after enter = %v, want [go]", got)
+	}
+}
+
+func TestPickModelSelectionSurvivesFiltering(t *testing.T) {
+	m := newTestPicker()
+
+	m = updatePicker(m, tea.KeySpace) // select "go"
+	m.input.SetValue("py")
+	m.applyFilter()
+	if view := m.View(); !strings.Contains(view, "(1 selected)") {
+		t.Errorf("selected count should survive filtering, got:\n%s", view)
+	}
+
+	m.input.SetValue("")
+	m.applyFilter()
+	if got := m.Choices(); !reflect.DeepEqual(got, []string{"go"}) {
+		t.Errorf("Choices() after clearing filter = %v, want [go]", got)
+	}
+}
+
+func TestPickModelCheckboxMarkers(t *testing.T) {
+	m := newTestPicker()
+	m = updatePicker(m, tea.KeySpace) // select "go", cursor now on "python"
+
+	// Check markers per line: the cursor row is styled, so its text is
+	// wrapped in ANSI codes and cannot be matched with a plain substring.
+	checked := map[string]bool{}
+	for _, line := range strings.Split(m.View(), "\n") {
+		switch {
+		case strings.Contains(line, "go"):
+			checked["go"] = true
+			if !strings.Contains(line, "[x]") {
+				t.Errorf("line for go should show selected marker: %q", line)
+			}
+		case strings.Contains(line, "python"):
+			checked["python"] = true
+			if !strings.Contains(line, "[ ]") {
+				t.Errorf("line for python should show unselected marker: %q", line)
+			}
+		}
+	}
+	for _, name := range []string{"go", "python"} {
+		if !checked[name] {
+			t.Errorf("View() has no line containing %q", name)
+		}
 	}
 }
