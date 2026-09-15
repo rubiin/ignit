@@ -1,9 +1,9 @@
 # Ignit
 
-
-![CI](https://github.com/rubiin/ignit/actions/workflows/ci.yml/badge.svg)
-![AUR version](https://img.shields.io/aur/version/ignit-bin)
-![Release](https://img.shields.io/github/v/release/rubiin/ignit)
+[![CI](https://github.com/rubiin/ignit/actions/workflows/ci.yml/badge.svg)](https://github.com/rubiin/ignit/actions/workflows/ci.yml)
+[![Go Reference](https://pkg.go.dev/badge/github.com/rubiin/ignit.svg)](https://pkg.go.dev/github.com/rubiin/ignit)
+[![Release](https://img.shields.io/github/v/release/rubiin/ignit)](https://github.com/rubiin/ignit/releases/latest)
+[![License: GPL-3.0](https://img.shields.io/badge/License-GPL--3.0-blue.svg)](LICENSE)
 
 <img src="./img.png" align="center" height="150"/>
 
@@ -22,18 +22,24 @@ Pick your environment from a searchable list and ignit writes a ready-made
   [toptal/gitignore.io](https://github.com/toptal/gitignore.io) with a single
   command.
 
-## Install
+## Installation
 
-Make sure [Go](https://go.dev) is installed, then run:
-
-```sh
-go install github.com/rubiin/ignit@latest
+```bash
+go install linkrot/cmd/ignit@latest
 ```
 
-## Usage
+### Arch Linux
+
+Install the stable package from the AUR:
 
 ```sh
-ignit
+yay -S ignit-bin
+```
+
+Or build manually from the AUR by downloading the PKGBUILD, then running:
+
+```sh
+makepkg -si
 ```
 
 Fire up your terminal, type `ignit`, and you get a nice select interface from
