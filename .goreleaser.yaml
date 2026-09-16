@@ -66,6 +66,23 @@ aurs:
       # license
       install -Dm644 "./LICENSE" "${pkgdir}/usr/share/licenses/ignit/LICENSE"
 
+nfpms:
+  - package_name: ignit
+    file_name_template: '{{ .ConventionalFileName }}'
+    homepage: https://github.com/rubiin/ignit
+    description: Quickly generate .gitignore files for your projects from a curated list of environment templates.
+    license: GPL-3.0-only
+    maintainer: rubiin <roobin.bhandari@gmail.com>
+    formats:
+      - apk
+      - deb
+      - rpm
+    contents:
+      - src: ./ignit
+        dst: /usr/bin/ignit
+      - src: ./LICENSE
+        dst: /usr/share/licenses/ignit/LICENSE
+
 release:
   footer: >-
 
