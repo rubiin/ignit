@@ -23,14 +23,17 @@ jobs:
       - name: Install golangci-lint
         uses: golangci/golangci-lint-action@v9
         with:
-          version: latest
+          # Pinned so lint rules don't shift under CI between runs.
+          version: v2.13.2
 
       - name: Lint
         run: golangci-lint run
 
-        
       - name: Test
         run: go test ./...
+
+      - name: Test with race detector
+        run: go test -race ./...
 
       - name: Build
         run: |

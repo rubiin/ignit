@@ -2,7 +2,9 @@ package picker
 
 import (
 	"fmt"
+	"math"
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -53,9 +55,12 @@ func TestFuzzyMatchIndices(t *testing.T) {
 func TestHighlight(t *testing.T) {
 	style := lipgloss.NewStyle().Bold(true)
 
-	// Tests run without a TTY, so lipgloss strips styling for the first
-	// render. Force ASCII output so the escape codes are deterministic.
+	// Pin the color profile: without a TTY it varies by environment, and
+	// a mutated profile leaks into every later render. 0 strips colors but
+	// keeps bold, so the expected escapes stay deterministic.
+	originalProfile := lipgloss.ColorProfile()
 	lipgloss.SetColorProfile(0)
+	t.Cleanup(func() { lipgloss.SetColorProfile(originalProfile) })
 
 	got := highlight("gitignore", []int{0, 2}, style)
 	want := "\x1b[1mg\x1b[0mi\x1b[1mt\x1b[0mignore"
@@ -545,5 +550,124 @@ func TestPickModelCheckboxMarkers(t *testing.T) {
 		if !checked[name] {
 			t.Errorf("View() has no line containing %q", name)
 		}
+	}
+}
+
+func TestFuzzyScoreRanking(t *testing.T) {
+	tests := []struct {
+		name       string
+		pattern    string
+		higherIsOn string // the choice expected to score better
+		lowerIsOn  string
+	}{
+		{"prefix beats substring", "go", "go", "golang"},
+		{"dense beats scattered", "pyt", "python", "p/y/t/"},
+		{"shorter string wins on ties", "go", "go", "gopher"},
+		{"word start beats interior", "n", "node", "deno"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			high, low := fuzzyScore(tt.pattern, tt.higherIsOn), fuzzyScore(tt.pattern, tt.lowerIsOn)
+			if high <= low {
+				t.Errorf("fuzzyScore(%q, %q) = %d should beat fuzzyScore(%q, %q) = %d",
+					tt.pattern, tt.higherIsOn, high, tt.pattern, tt.lowerIsOn, low)
+			}
+		})
+	}
+}
+
+func TestFuzzyScoreEdgeCases(t *testing.T) {
+	if got := fuzzyScore("", "go"); got != 0 {
+		t.Errorf("fuzzyScore(\"\", \"go\") = %d, want 0", got)
+	}
+	if got := fuzzyScore("xz", "go"); got != math.MinInt {
+		t.Errorf("fuzzyScore(\"xz\", \"go\") = %d, want math.MinInt", got)
+	}
+	// Exact match scores better than any other kind.
+	if fuzzyScore("go", "go") <= fuzzyScore("go", "cargo") {
+		t.Error("exact match should outrank a substring match")
+	}
+}
+
+func TestApplyFilterRanksBestMatchFirst(t *testing.T) {
+	// List order is deliberately unhelpful for "go": the exact match sits
+	// after several fuzzy hits.
+	m := New("Select", []string{"golang", "argo", "go", "logrotate"})
+
+	m.input.SetValue("go")
+	m.applyFilter()
+
+	// All four match as subsequences, but ranking puts the exact prefix
+	// match first, then the dense word-start match (golang), then the
+	// scattered interior hits (argo, logrotate).
+	if got := m.filtered; !reflect.DeepEqual(got, []int{2, 0, 1, 3}) {
+		t.Errorf("filtered after 'go' = %v (choices %v), want [2 0 1 3] (go, golang, argo, logrotate)", got, m.choices)
+	}
+	if !cursorRowIs(m, "go") {
+		var dbg []string
+		for _, line := range strings.Split(m.View(), "\n") {
+			dbg = append(dbg, fmt.Sprintf("%q", line))
+		}
+		t.Errorf("cursor should sit on the best match 'go', lines:\n%s", strings.Join(dbg, "\n"))
+	}
+}
+
+// ansiCodes matches ANSI SGR escape sequences.
+var ansiCodes = regexp.MustCompile("\x1b\\[[0-9;]*m")
+
+// cursorRowIs reports whether the view's cursor row shows the given choice,
+// ignoring ANSI codes around matched characters.
+func cursorRowIs(m Model, choice string) bool {
+	for _, line := range strings.Split(m.View(), "\n") {
+		plain := ansiCodes.ReplaceAllString(line, "")
+		if strings.HasPrefix(plain, "> [ ] ") && strings.Contains(plain, choice) {
+			return true
+		}
+	}
+	return false
+}
+
+func TestApplyFilterNoPatternKeepsOrder(t *testing.T) {
+	m := New("Select", []string{"rust", "go", "python"})
+
+	// Empty pattern: original list order, no re-ranking.
+	if got := m.filtered; !reflect.DeepEqual(got, []int{0, 1, 2}) {
+		t.Errorf("empty-pattern filtered = %v, want original order [0 1 2]", got)
+	}
+
+	// Clearing a pattern must restore the original order too.
+	m.input.SetValue("go")
+	m.applyFilter()
+	m.input.SetValue("")
+	m.applyFilter()
+	if got := m.filtered; !reflect.DeepEqual(got, []int{0, 1, 2}) {
+		t.Errorf("filtered after clearing pattern = %v, want original order", got)
+	}
+}
+
+func TestApplyFilterTiesKeepOriginalOrder(t *testing.T) {
+	// Equal scores (identical strings except index) must not reorder.
+	m := New("Select", []string{"zig", "zr", "zig"})
+	m.input.SetValue("zig")
+	m.applyFilter()
+
+	if got := m.filtered; !reflect.DeepEqual(got, []int{0, 2}) {
+		t.Errorf("filtered = %v, want [0 2] (tie keeps original order)", got)
+	}
+}
+
+func TestApplyFilterRankSurvivesCursorMotion(t *testing.T) {
+	m := New("Select", []string{"golang", "go", "godot"})
+	m.input.SetValue("go")
+	m.applyFilter()
+
+	// Down, then up must land back on the ranked-best row.
+	m = updatePicker(m, tea.KeyDown)
+	m = updatePicker(m, tea.KeyUp)
+	if m.cursor != 0 {
+		t.Errorf("cursor = %d, want 0 (best match stays first)", m.cursor)
+	}
+	if !cursorRowIs(m, "go") {
+		t.Errorf("View() should still highlight 'go', got:\n%s", m.View())
 	}
 }

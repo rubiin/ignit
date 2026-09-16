@@ -34,25 +34,58 @@ var (
 	dimStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("241"))
 )
 
-// writeGitignore merges the template for each language client-side and
-// writes the result to .gitignore in the current directory, streaming one
-// event per completed fetch into progress. The channel must be buffered
-// with room for every fetch so the callback never blocks.
+// backupPath is where the previous .gitignore is kept when overwritten.
+const backupPath = ".gitignore.bak"
+
+// backupGitignore copies the current .gitignore to .gitignore.bak before it
+// is overwritten. A missing file is not an error.
+func backupGitignore() (bool, error) {
+	original, err := os.ReadFile(".gitignore")
+	if err != nil {
+		if os.IsNotExist(err) {
+			return false, nil
+		}
+		return false, fmt.Errorf("could not read existing .gitignore: %w", err)
+	}
+	if err := os.WriteFile(backupPath, original, 0o644); err != nil {
+		return false, fmt.Errorf("could not write %s: %w", backupPath, err)
+	}
+	return true, nil
+}
+
+// writeGitignore backs up any existing .gitignore, merges the template for
+// each language client-side, and writes the result to .gitignore in the
+// current directory, streaming one event per completed fetch into progress.
+// The channel must be buffered with room for every fetch so the callback
+// never blocks.
 func writeGitignore(languages []string, progress chan<- fetchEvent) error {
+	backedUp, err := backupGitignore()
+	if err != nil {
+		return err
+	}
+
 	content, err := gitignore.MergeWithProgress(languages, func(language string, source gitignore.Source) {
 		progress <- fetchEvent{language: language, source: source}
 	})
 	if err != nil {
 		return err
 	}
-	return gitignore.Write(".gitignore", content)
+	if err := gitignore.Write(".gitignore", content); err != nil {
+		return err
+	}
+	if backedUp {
+		progress <- fetchEvent{backedUp: true}
+	}
+	return nil
 }
 
 // fetchEvent is one progress update from the download goroutine: either a
-// template fetch completing (with its origin) or the final result.
+// template fetch completing (with its origin), the backup notice, or the
+// final result.
 type fetchEvent struct {
 	language string
 	source   gitignore.Source
+	backedUp bool
 	done     bool
 	err      error
 }
@@ -97,6 +130,7 @@ type downloadingModel struct {
 	ch        <-chan fetchEvent
 	err       error
 	done      bool
+	backedUp  bool
 }
 
 func newDownloadingModel(languages []string) downloadingModel {
@@ -131,6 +165,10 @@ func (m downloadingModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return m, tea.Quit
 		}
+		if msg.backedUp {
+			m.backedUp = true
+			return m, listenFetchCmd(m.ch)
+		}
 		m.sources[msg.language] = msg.source
 		return m, listenFetchCmd(m.ch)
 	}
@@ -143,7 +181,11 @@ func (m downloadingModel) View() string {
 		return fmt.Sprintf("\n %s Error: %v\n", errorStyle.Render("x"), m.err)
 	}
 	if m.done {
-		return fmt.Sprintf("\n %s Successfully created gitignore for %s\n\n Press any key to exit\n", successStyle.Render("OK"), list)
+		msg := fmt.Sprintf("\n %s Successfully created gitignore for %s\n", successStyle.Render("OK"), list)
+		if m.backedUp {
+			msg += fmt.Sprintf("\n Previous .gitignore saved to %s\n", dimStyle.Render(backupPath))
+		}
+		return msg + "\n Press any key to exit\n"
 	}
 
 	var b strings.Builder

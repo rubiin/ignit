@@ -10,6 +10,7 @@ import (
 	"reflect"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestParse(t *testing.T) {
@@ -183,6 +184,55 @@ func TestFetchEmptyBody(t *testing.T) {
 
 	if _, err := Fetch(); err == nil {
 		t.Fatal("Fetch() expected error for empty body, got nil")
+	}
+}
+
+func TestFetchFailsFastOnHangingServer(t *testing.T) {
+	// A server that never answers must not stall Fetch: the client
+	// timeout has to turn the hang into an error.
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-time.After(10 * time.Second):
+			if _, err := w.Write([]byte("go,rust")); err != nil {
+				t.Errorf("failed to write response: %v", err)
+			}
+		case <-r.Context().Done(): // client gave up
+		}
+	}))
+	defer server.Close()
+
+	originalAPI, originalClient := API, HTTPClient
+	API = server.URL
+	HTTPClient = &http.Client{Timeout: 100 * time.Millisecond}
+	defer func() { API, HTTPClient = originalAPI, originalClient }()
+
+	start := time.Now()
+	if _, err := Fetch(); err == nil {
+		t.Fatal("Fetch() expected error against a hanging server, got nil")
+	}
+	if elapsed := time.Since(start); elapsed > 5*time.Second {
+		t.Errorf("Fetch() took %v against a hanging server, want it to fail fast", elapsed)
+	}
+}
+
+func TestOutputPathResolvesToEnvsDir(t *testing.T) {
+	// A relative Path must resolve into internal/envs regardless of the
+	// test's working directory.
+	got := outputPath()
+	if !filepath.IsAbs(got) {
+		t.Errorf("outputPath() = %q, want an absolute path", got)
+	}
+	if want := filepath.Join("internal", "envs", "environments.go"); !strings.HasSuffix(filepath.ToSlash(got), want) {
+		t.Errorf("outputPath() = %q, want it to end with %q", got, want)
+	}
+
+	// An absolute Path is used verbatim.
+	abs := filepath.Join(t.TempDir(), "environments.go")
+	original := Path
+	Path = abs
+	defer func() { Path = original }()
+	if got := outputPath(); got != abs {
+		t.Errorf("outputPath() with absolute Path = %q, want %q unchanged", got, abs)
 	}
 }
 

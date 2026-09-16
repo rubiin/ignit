@@ -5,6 +5,8 @@ package picker
 
 import (
 	"fmt"
+	"math"
+	"sort"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
@@ -62,6 +64,46 @@ func fuzzyMatchIndices(pattern, s string) ([]int, bool) {
 		return nil, false
 	}
 	return indices, true
+}
+
+// fuzzyScore scores a case-insensitive subsequence match; higher is
+// better. Non-matches score math.MinInt; an empty pattern scores 0.
+// Bonus: early match, word start, consecutive run; shorter strings win.
+func fuzzyScore(pattern, s string) int {
+	if pattern == "" {
+		return 0
+	}
+
+	indices, ok := fuzzyMatchIndices(pattern, s)
+	if !ok {
+		return math.MinInt
+	}
+
+	runes := []rune(s)
+	score := len(indices) - len(runes) - indices[0] // density + early-match bonus
+
+	for k, i := range indices {
+		if i == 0 || isWordBoundary(runes[i-1], runes[i]) {
+			score += 2 // word-start matches
+		}
+		if k > 0 && i == indices[k-1]+1 {
+			score += 3 // consecutive-run bonus outweighs scattered boundaries
+		}
+	}
+
+	return score
+}
+
+// isWordBoundary reports whether r starts a new word given the preceding
+// rune: after a separator or across a letter/digit transition.
+func isWordBoundary(prev, r rune) bool {
+	alphanumeric := func(c rune) bool {
+		return c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9'
+	}
+	if !alphanumeric(prev) {
+		return true
+	}
+	return alphanumeric(prev) != alphanumeric(r)
 }
 
 // fuzzyMatch reports whether pattern matches s as a case-insensitive
@@ -145,8 +187,8 @@ func (m *Model) clampView() {
 	}
 }
 
-// applyFilter recomputes the visible choices from the current input value
-// and clamps the cursor to the new range.
+// applyFilter recomputes the visible choices, ranked best match first
+// (ties keep original order), and clamps the cursor.
 func (m *Model) applyFilter() {
 	m.filtered = m.filtered[:0]
 	pattern := strings.TrimSpace(m.input.Value())
@@ -154,6 +196,18 @@ func (m *Model) applyFilter() {
 		if pattern == "" || fuzzyMatch(pattern, choice) {
 			m.filtered = append(m.filtered, i)
 		}
+	}
+	if pattern != "" {
+		ranked := make([]int, len(m.filtered))
+		copy(ranked, m.filtered)
+		sort.SliceStable(ranked, func(a, b int) bool {
+			sa, sb := fuzzyScore(pattern, m.choices[ranked[a]]), fuzzyScore(pattern, m.choices[ranked[b]])
+			if sa != sb {
+				return sa > sb
+			}
+			return ranked[a] < ranked[b] // stable tie-break: original order
+		})
+		m.filtered = ranked
 	}
 	m.clampView()
 }

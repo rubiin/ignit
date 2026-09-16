@@ -7,14 +7,24 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
+	"time"
 )
 
 // API is the gitignore.io API base URL. A var so tests can point it at an
 // httptest server.
 var API = "https://www.gitignore.io/api"
 
-// Path is the file the generated list is written to.
+// HTTPClient is the client used for the list fetch. The timeout keeps a hung
+// connection from stalling --update-list indefinitely.
+var HTTPClient = &http.Client{Timeout: 10 * time.Second}
+
+// Path is the file the generated list is written to, relative to this
+// package's directory. Update resolves it against the package source
+// location, so running `ignit --update-list` from any working directory
+// regenerates the embedded snapshot in internal/envs.
 var Path = "environments.go"
 
 // Parse splits the raw comma-separated API response into environment names,
@@ -57,7 +67,7 @@ func Write(path string, content string) error {
 
 // Fetch calls the gitignore.io list API and parses the result.
 func Fetch() ([]string, error) {
-	resp, err := http.Get(API + "/list")
+	resp, err := HTTPClient.Get(API + "/list")
 	if err != nil {
 		return nil, fmt.Errorf("failed to list environments: %w", err)
 	}
@@ -86,10 +96,28 @@ func Update() error {
 		return err
 	}
 
-	if err := Write(Path, Render(items)); err != nil {
+	if err := Write(outputPath(), Render(items)); err != nil {
 		return err
 	}
 
-	fmt.Printf("Updated %s with %d environments\n", Path, len(items))
+	fmt.Printf("Updated %s with %d environments\n", outputPath(), len(items))
 	return nil
+}
+
+// outputPath resolves the target file for Update: Path is interpreted
+// relative to this package's source directory (internal/envlist's parent,
+// then internal/envs), so the generated snapshot lands in internal/envs
+// no matter the caller's working directory.
+func outputPath() string {
+	if filepath.IsAbs(Path) {
+		return Path
+	}
+	_, thisFile, _, ok := runtime.Caller(0)
+	if !ok {
+		// Source path unavailable (unusual build setups): fall back to the
+		// working directory so Update still writes somewhere predictable.
+		return Path
+	}
+	pkgDir := filepath.Dir(thisFile)
+	return filepath.Join(pkgDir, "..", "envs", Path)
 }

@@ -42,7 +42,7 @@ single `.gitignore` — with section order and headers controlled locally.
 ## Installation
 
 ```bash
-go install linkrot/cmd/ignit@latest
+go install github.com/rubiin/ignit@latest
 ```
 
 ### Arch Linux
