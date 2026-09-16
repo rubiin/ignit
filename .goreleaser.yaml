@@ -31,20 +31,6 @@ archives:
     files:
       - LICENSE
 
-changelog:
-  sort: desc
-  use: git
-
-  groups:
-    - title: 🚀 New Features
-      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
-      order: 0
-    - title: "🐛 Bug Fixes"
-      regexp: '^.*?(fix|bug)(\([[:word:]]+\))??!?:.+$'
-      order: 1
-    - title: Others
-      order: 999
-
 
 aurs:
   - name: ignit-bin
@@ -81,6 +67,20 @@ nfpms:
     contents:
       - src: ./LICENSE
         dst: /usr/share/licenses/ignit/LICENSE
+
+changelog:
+  sort: desc
+  use: git
+
+  groups:
+    - title: 🚀 New Features
+      regexp: '^.*?feat(\([[:word:]]+\))??!?:.+$'
+      order: 0
+    - title: "🐛 Bug Fixes"
+      regexp: '^.*?(fix|bug)(\([[:word:]]+\))??!?:.+$'
+      order: 1
+    - title: Others
+      order: 999
 
 release:
   footer: >-
