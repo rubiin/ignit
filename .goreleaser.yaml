@@ -77,9 +77,8 @@ nfpms:
       - apk
       - deb
       - rpm
+    bindir: /usr/bin
     contents:
-      - src: ./ignit
-        dst: /usr/bin/ignit
       - src: ./LICENSE
         dst: /usr/share/licenses/ignit/LICENSE
 
