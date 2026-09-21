@@ -1,14 +1,13 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"io"
 	"os"
 	"strings"
 	"testing"
 
-	"github.com/urfave/cli/v3"
+	"github.com/spf13/cobra"
 
 	"github.com/rubiin/ignit/internal/gitignore"
 )
@@ -21,10 +20,10 @@ type commandRecorder struct {
 	updateErr   error
 }
 
-// newTestCmd builds the ignit command with stubbed seams so cmd.Run drives
-// the full CLI stack (flag parsing, flag Actions, root action) without the
+// newTestCmd builds the ignit command with stubbed seams so cmd.Execute
+// drives the full CLI stack (flag parsing, runRoot dispatch) without the
 // TUI or the network.
-func newTestCmd(t *testing.T, rec *commandRecorder) *cli.Command {
+func newTestCmd(t *testing.T, rec *commandRecorder) *cobra.Command {
 	t.Helper()
 
 	// Stub the seams and restore them after the test.
@@ -48,7 +47,7 @@ func newTestCmd(t *testing.T, rec *commandRecorder) *cli.Command {
 		gitignore.BypassCache = originalBypass
 	})
 
-	return newCommand()
+	return newRootCmd()
 }
 
 // captureStdout runs fn with os.Stdout redirected and returns what was
@@ -74,13 +73,15 @@ func captureStdout(t *testing.T, fn func()) string {
 func runCLI(t *testing.T, args ...string) error {
 	t.Helper()
 	cmd := newTestCmd(t, &commandRecorder{})
-	return cmd.Run(context.Background(), append([]string{"ignit"}, args...))
+	cmd.SetArgs(args)
+	return cmd.Execute()
 }
 
 func runCLIWithRecorder(t *testing.T, rec *commandRecorder, args ...string) error {
 	t.Helper()
 	cmd := newTestCmd(t, rec)
-	return cmd.Run(context.Background(), append([]string{"ignit"}, args...))
+	cmd.SetArgs(args)
+	return cmd.Execute()
 }
 
 func TestCLIDefaultRunsPicker(t *testing.T) {
@@ -143,19 +144,45 @@ func TestCLIUpdateList(t *testing.T) {
 }
 
 func TestCLIVersion(t *testing.T) {
-	err := runCLI(t, "--version")
-	if err == nil {
-		return // zero exit code surfaces as nil in some cli versions
+	runVersion := func(args ...string) (string, error) {
+		var printed string
+		err := func() error {
+			var err error
+			printed = captureStdout(t, func() {
+				err = runCLI(t, args...)
+			})
+			return err
+		}()
+		return printed, err
 	}
-	var exitErr cli.ExitCoder
-	if !errors.As(err, &exitErr) || exitErr.ExitCode() != 0 {
-		t.Errorf("cmd.Run(--version) error = %v, want exit code 0", err)
+
+	printed, err := runVersion("--version")
+	if err != nil {
+		t.Fatalf("cmd.Execute(--version) error = %v, want nil", err)
+	}
+	if !strings.Contains(printed, "version") {
+		t.Errorf("--version output %q missing version line", printed)
+	}
+
+	printed, err = runVersion("-v")
+	if err != nil {
+		t.Fatalf("cmd.Execute(-v) error = %v, want nil", err)
+	}
+	if !strings.Contains(printed, "version") {
+		t.Errorf("-v output %q missing version line", printed)
 	}
 }
 
 func TestCLIUnknownFlagErrors(t *testing.T) {
 	if err := runCLI(t, "--definitely-not-a-flag"); err == nil {
-		t.Fatal("cmd.Run() expected error for unknown flag, got nil")
+		t.Fatal("cmd.Execute() expected error for unknown flag, got nil")
+	}
+}
+
+func TestCLICompletion(t *testing.T) {
+	// Cobra's built-in completion subcommand backs the README examples.
+	if err := runCLI(t, "completion", "bash"); err != nil {
+		t.Fatalf("cmd.Execute(completion bash) error = %v", err)
 	}
 }
 

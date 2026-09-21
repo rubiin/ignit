@@ -1,8 +1,8 @@
 // Package envs holds the static environment list snapshot embedded in the
-// binary. Regenerate with `ignit -update-list`.
+// binary. Regenerate with `ignit --update-list`.
 package envs
 
-//go:generate go run github.com/rubiin/ignit -update-list
+//go:generate go run github.com/rubiin/ignit --update-list
 
 // List is a static snapshot of the template list from
 // https://github.com/toptal/gitignore.io. The picker works fully

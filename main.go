@@ -8,7 +8,6 @@
 package main
 
 import (
-	"context"
 	"fmt"
 	"log"
 	"os"
@@ -17,7 +16,7 @@ import (
 	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/urfave/cli/v3"
+	"github.com/spf13/cobra"
 
 	"github.com/rubiin/ignit/internal/envlist"
 	"github.com/rubiin/ignit/internal/envs"
@@ -233,13 +232,25 @@ var (
 	updateListFunc = envlist.Update
 )
 
-// runRoot is the CLI's root action: dispatch the "do X and exit" flags, or
-// fall through to the interactive picker.
-func runRoot(_ context.Context, cmd *cli.Command) error {
+// flagBool reads a registered bool flag, defaulting to false on any error.
+func flagBool(cmd *cobra.Command, name string) bool {
+	v, err := cmd.Flags().GetBool(name)
+	return err == nil && v
+}
+
+// runRoot is the root action: dispatch the "do X and exit" flags, or fall
+// through to the interactive picker.
+func runRoot(cmd *cobra.Command, _ []string) error {
+	// --no-cache applies to whatever runs next, even when another flag
+	// short-circuits the picker below.
+	if flagBool(cmd, "no-cache") {
+		gitignore.BypassCache = true
+	}
+
 	switch {
-	case cmd.Bool("update-list"):
+	case flagBool(cmd, "update-list"):
 		return updateListFunc()
-	case cmd.Bool("clear-cache"):
+	case flagBool(cmd, "clear-cache"):
 		dir, err := gitignore.ClearCache()
 		if err != nil {
 			return err
@@ -250,36 +261,32 @@ func runRoot(_ context.Context, cmd *cli.Command) error {
 	return runPickerFunc()
 }
 
-func newCommand() *cli.Command {
-	return &cli.Command{
-		Name:                  "ignit",
-		Usage:                 "quickly generate .gitignore files",
-		Version:               version,
-		EnableShellCompletion: true,
-		Flags: []cli.Flag{
-			&cli.BoolFlag{
-				Name:  "clear-cache",
-				Usage: "delete the on-disk template cache and exit",
-			},
-			&cli.BoolFlag{
-				Name:  "no-cache",
-				Usage: "bypass the template cache: always fetch from the network (still refreshes the cache)",
-				Action: func(_ context.Context, _ *cli.Command, _ bool) error {
-					gitignore.BypassCache = true
-					return nil
-				},
-			},
-			&cli.BoolFlag{
-				Name:  "update-list",
-				Usage: "re-fetch the template list from gitignore.io and regenerate the embedded list",
-			},
-		},
-		Action: runRoot,
+func newRootCmd() *cobra.Command {
+	root := &cobra.Command{
+		Use:           "ignit",
+		Short:         "quickly generate .gitignore files",
+		Version:       version,
+		SilenceErrors: true,
+		SilenceUsage:  true,
+		Args:          cobra.NoArgs, // stray words error instead of falling through to the picker
+		RunE:          runRoot,
 	}
+
+	// Register --version before cobra's own so it gets the -v shorthand;
+	// cobra detects the existing flag and uses it for its version handling.
+	root.Flags().BoolP("version", "v", false, "version for ignit")
+	root.Flags().Bool("clear-cache", false, "delete the on-disk template cache and exit")
+	root.Flags().Bool("no-cache", false, "bypass the template cache: always fetch from the network (still refreshes the cache)")
+	root.Flags().Bool("update-list", false, "re-fetch the template list from gitignore.io and regenerate the embedded list")
+
+	// Cobra adds its own `completion` subcommand (lazily, since it is the
+	// only one); `--help`/`-h` come from the built-in help flag. Silencing
+	// usage/errors keeps error output in main's control.
+	return root
 }
 
 func main() {
-	if err := newCommand().Run(context.Background(), os.Args); err != nil {
+	if err := newRootCmd().Execute(); err != nil {
 		log.Fatalf("error: %v", err)
 	}
 }
