@@ -9,9 +9,9 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 // maxVisibleRows is the number of list rows shown at once; the view scrolls
@@ -137,7 +137,7 @@ func New(label string, choices []string) Model {
 	ti.Prompt = "> "
 	ti.Focus()
 	ti.CharLimit = 100
-	ti.Width = 40
+	ti.SetWidth(40)
 
 	m := Model{
 		label:    label,
@@ -226,9 +226,14 @@ func (m Model) Init() tea.Cmd { return textinput.Blink }
 
 func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
-		switch msg.Type {
-		case tea.KeyCtrlC, tea.KeyEsc:
+	case tea.KeyPressMsg:
+		if msg.String() == "ctrl+c" {
+			m.choice = ""
+			m.quit = true
+			return m, tea.Quit
+		}
+		switch msg.Key().Code {
+		case tea.KeyEsc:
 			m.choice = ""
 			m.quit = true
 			return m, tea.Quit
@@ -267,16 +272,14 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.moveCursor(maxVisibleRows)
 			return m, nil
 		}
-	case tea.MouseMsg:
-		if msg.Action == tea.MouseActionPress {
-			switch msg.Button {
-			case tea.MouseButtonWheelUp:
-				m.moveCursor(-wheelScrollLines)
-				return m, nil
-			case tea.MouseButtonWheelDown:
-				m.moveCursor(wheelScrollLines)
-				return m, nil
-			}
+	case tea.MouseWheelMsg:
+		switch msg.Button {
+		case tea.MouseWheelUp:
+			m.moveCursor(-wheelScrollLines)
+			return m, nil
+		case tea.MouseWheelDown:
+			m.moveCursor(wheelScrollLines)
+			return m, nil
 		}
 	}
 
@@ -286,7 +289,7 @@ func (m Model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
-func (m Model) View() string {
+func (m Model) View() tea.View {
 	var b strings.Builder
 
 	b.WriteString(m.styles.title.Render(m.label))
@@ -296,7 +299,7 @@ func (m Model) View() string {
 
 	if len(m.filtered) == 0 {
 		b.WriteString(m.styles.hint.Render("no matches"))
-		return b.String()
+		return m.mouseView(b.String())
 	}
 
 	pattern := strings.TrimSpace(m.input.Value())
@@ -333,7 +336,15 @@ func (m Model) View() string {
 		indicator += fmt.Sprintf(" (%d-%d of %d)", m.offset+1, end, len(m.filtered))
 	}
 	b.WriteString(m.styles.hint.Render("(type to filter, up/down or pgup/pgdn to move, space to toggle, enter to select, esc to cancel)" + indicator))
-	return b.String()
+	return m.mouseView(b.String())
+}
+
+// mouseView wraps the rendered content in a tea.View with cell-motion mouse
+// reporting enabled, so the mouse wheel scrolls the list.
+func (m Model) mouseView(content string) tea.View {
+	v := tea.NewView(content)
+	v.MouseMode = tea.MouseModeCellMotion
+	return v
 }
 
 // highlight wraps the runes at the given indices in s with the given style,

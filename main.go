@@ -13,9 +13,9 @@ import (
 	"os"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/spinner"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/spf13/cobra"
 
 	"github.com/rubiin/ignit/internal/envlist"
@@ -144,7 +144,7 @@ func (m downloadingModel) Init() tea.Cmd {
 
 func (m downloadingModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		if m.done || msg.String() == "ctrl+c" {
 			return m, tea.Quit
 		}
@@ -174,17 +174,17 @@ func (m downloadingModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func (m downloadingModel) View() string {
+func (m downloadingModel) View() tea.View {
 	list := strings.Join(m.languages, ", ")
 	if m.err != nil {
-		return fmt.Sprintf("\n %s Error: %v\n", errorStyle.Render("x"), m.err)
+		return tea.NewView(fmt.Sprintf("\n %s Error: %v\n", errorStyle.Render("x"), m.err))
 	}
 	if m.done {
 		msg := fmt.Sprintf("\n %s Successfully created gitignore for %s\n", successStyle.Render("OK"), list)
 		if m.backedUp {
 			msg += fmt.Sprintf("\n Previous .gitignore saved to %s\n", dimStyle.Render(backupPath))
 		}
-		return msg + "\n Press any key to exit\n"
+		return tea.NewView(msg + "\n Press any key to exit\n")
 	}
 
 	var b strings.Builder
@@ -198,11 +198,11 @@ func (m downloadingModel) View() string {
 			fmt.Fprintf(&b, "   %s %s\n", language, dimStyle.Render(label))
 		}
 	}
-	return b.String()
+	return tea.NewView(b.String())
 }
 
 func runPicker() error {
-	program := tea.NewProgram(picker.New("Select environment", envs.List), tea.WithMouseCellMotion())
+	program := tea.NewProgram(picker.New("Select environment", envs.List))
 	finalModel, err := program.Run()
 	if err != nil {
 		return fmt.Errorf("could not run program: %w", err)

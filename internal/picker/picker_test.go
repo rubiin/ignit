@@ -8,8 +8,8 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 )
 
 func TestFuzzyMatch(t *testing.T) {
@@ -55,15 +55,10 @@ func TestFuzzyMatchIndices(t *testing.T) {
 func TestHighlight(t *testing.T) {
 	style := lipgloss.NewStyle().Bold(true)
 
-	// Pin the color profile: without a TTY it varies by environment, and
-	// a mutated profile leaks into every later render. 0 strips colors but
-	// keeps bold, so the expected escapes stay deterministic.
-	originalProfile := lipgloss.ColorProfile()
-	lipgloss.SetColorProfile(0)
-	t.Cleanup(func() { lipgloss.SetColorProfile(originalProfile) })
-
 	got := highlight("gitignore", []int{0, 2}, style)
-	want := "\x1b[1mg\x1b[0mi\x1b[1mt\x1b[0mignore"
+	// Lip Gloss v2 resets styling with a bare SGR (\x1b[m), which the
+	// terminal treats the same as \x1b[0m.
+	want := "\x1b[1mg\x1b[mi\x1b[1mt\x1b[mignore"
 	if got != want {
 		t.Errorf("highlight() = %q, want %q", got, want)
 	}
@@ -78,15 +73,15 @@ func TestHighlight(t *testing.T) {
 	}
 }
 
-// updatePicker sends a key message to the picker and returns the new model.
-func updatePicker(m Model, key tea.KeyType) Model {
-	next, _ := m.Update(tea.KeyMsg{Type: key})
+// updatePicker sends a key press message to the picker and returns the new model.
+func updatePicker(m Model, code rune) Model {
+	next, _ := m.Update(tea.KeyPressMsg{Code: code})
 	return next.(Model)
 }
 
 // wheelPicker sends a mouse wheel event to the picker and returns the new model.
 func wheelPicker(m Model, button tea.MouseButton) Model {
-	next, _ := m.Update(tea.MouseMsg(tea.MouseEvent{Action: tea.MouseActionPress, Button: button}))
+	next, _ := m.Update(tea.MouseWheelMsg{Button: button})
 	return next.(Model)
 }
 
@@ -220,14 +215,14 @@ func TestPickModelMouseWheelScrolling(t *testing.T) {
 	m := newLargePicker()
 
 	// Wheel down scrolls by wheelScrollLines (3).
-	m = wheelPicker(m, tea.MouseButtonWheelDown)
-	m = wheelPicker(m, tea.MouseButtonWheelDown)
+	m = wheelPicker(m, tea.MouseWheelDown)
+	m = wheelPicker(m, tea.MouseWheelDown)
 	if m.cursor != 2*wheelScrollLines {
 		t.Errorf("cursor after two wheel-downs = %d, want %d", m.cursor, 2*wheelScrollLines)
 	}
 
 	// Wheel up scrolls back.
-	m = wheelPicker(m, tea.MouseButtonWheelUp)
+	m = wheelPicker(m, tea.MouseWheelUp)
 	if m.cursor != wheelScrollLines {
 		t.Errorf("cursor after wheel-up = %d, want %d", m.cursor, wheelScrollLines)
 	}
@@ -259,7 +254,7 @@ func TestMoveCursorWraps(t *testing.T) {
 func TestPickModelShowsAtMostTenRows(t *testing.T) {
 	m := newLargePicker()
 
-	view := m.View()
+	view := m.View().Content
 	if got := strings.Count(view, "choice"); got != 10 {
 		t.Errorf("View() shows %d rows, want 10", got)
 	}
@@ -282,7 +277,7 @@ func TestPickModelScrollsDownWithCursor(t *testing.T) {
 		t.Errorf("offset = %d, want 3 (cursor on window bottom)", m.offset)
 	}
 
-	view := m.View()
+	view := m.View().Content
 	if !strings.Contains(view, "choice12") {
 		t.Error("View() should show the cursor row choice12")
 	}
@@ -334,7 +329,7 @@ func TestPickModelWrapScrollsToTail(t *testing.T) {
 func TestPickModelSmallListHasNoIndicator(t *testing.T) {
 	m := newTestPicker() // only 3 choices
 
-	if view := m.View(); strings.Contains(view, "of 3") {
+	if view := m.View().Content; strings.Contains(view, "of 3") {
 		t.Errorf("View() should omit scroll indicator when everything fits, got:\n%s", view)
 	}
 }
@@ -356,7 +351,7 @@ func TestPickModelFilterClampsOffset(t *testing.T) {
 	if m.cursor != 0 || m.offset != 0 {
 		t.Errorf("cursor = %d, offset = %d, want both 0", m.cursor, m.offset)
 	}
-	if view := m.View(); !strings.Contains(view, "choice05") {
+	if view := m.View().Content; !strings.Contains(view, "choice05") {
 		t.Errorf("View() should show choice05 after filtering, got:\n%s", view)
 	}
 }
@@ -390,9 +385,13 @@ func TestPickModelEnterWithNoMatches(t *testing.T) {
 }
 
 func TestPickModelEscapeCancels(t *testing.T) {
-	for _, key := range []tea.KeyType{tea.KeyEsc, tea.KeyCtrlC} {
+	for _, key := range []tea.KeyPressMsg{
+		{Code: tea.KeyEsc},
+		{Code: 'c', Mod: tea.ModCtrl}, // ctrl+c
+	} {
 		m := newTestPicker()
-		m = updatePicker(m, key)
+		next, _ := m.Update(key)
+		m = next.(Model)
 		if got := m.Choices(); got != nil {
 			t.Errorf("choices = %v after %v, want empty", got, key)
 		}
@@ -407,7 +406,7 @@ func TestPickModelTypingFilters(t *testing.T) {
 
 	// Simulate typing "ru" rune by rune through Update.
 	for _, r := range "ru" {
-		next, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune{r}})
+		next, _ := m.Update(tea.KeyPressMsg{Code: r, Text: string(r)})
 		m = next.(Model)
 	}
 
@@ -431,14 +430,14 @@ func TestPickModelInputConfig(t *testing.T) {
 	if m.input.CharLimit != 100 {
 		t.Errorf("input char limit = %d, want 100", m.input.CharLimit)
 	}
-	if m.input.Width != 40 {
-		t.Errorf("input width = %d, want 40", m.input.Width)
+	if m.input.Width() != 40 {
+		t.Errorf("input width = %d, want 40", m.input.Width())
 	}
 }
 
 func TestPickModelView(t *testing.T) {
 	m := newTestPicker()
-	view := m.View()
+	view := m.View().Content
 
 	for _, want := range []string{"Select environment", "go", "python", "rust", "> ", "enter to select"} {
 		if !strings.Contains(view, want) {
@@ -448,7 +447,7 @@ func TestPickModelView(t *testing.T) {
 
 	m.input.SetValue("zzz")
 	m.applyFilter()
-	if view := m.View(); !strings.Contains(view, "no matches") {
+	if view := m.View().Content; !strings.Contains(view, "no matches") {
 		t.Errorf("View() with no matches should show 'no matches', got %q", view)
 	}
 }
@@ -490,7 +489,7 @@ func TestPickModelSpaceTogglesMultiple(t *testing.T) {
 	if got := m.Choices(); !reflect.DeepEqual(got, []string{"go", "python"}) {
 		t.Errorf("Choices() = %v, want [go python]", got)
 	}
-	if view := m.View(); !strings.Contains(view, "(2 selected)") {
+	if view := m.View().Content; !strings.Contains(view, "(2 selected)") {
 		t.Errorf("View() should show '(2 selected)', got:\n%s", view)
 	}
 }
@@ -514,7 +513,7 @@ func TestPickModelSelectionSurvivesFiltering(t *testing.T) {
 	m = updatePicker(m, tea.KeySpace) // select "go"
 	m.input.SetValue("py")
 	m.applyFilter()
-	if view := m.View(); !strings.Contains(view, "(1 selected)") {
+	if view := m.View().Content; !strings.Contains(view, "(1 selected)") {
 		t.Errorf("selected count should survive filtering, got:\n%s", view)
 	}
 
@@ -532,7 +531,7 @@ func TestPickModelCheckboxMarkers(t *testing.T) {
 	// Check markers per line: the cursor row is styled, so its text is
 	// wrapped in ANSI codes and cannot be matched with a plain substring.
 	checked := map[string]bool{}
-	for _, line := range strings.Split(m.View(), "\n") {
+	for _, line := range strings.Split(m.View().Content, "\n") {
 		switch {
 		case strings.Contains(line, "go"):
 			checked["go"] = true
@@ -605,7 +604,7 @@ func TestApplyFilterRanksBestMatchFirst(t *testing.T) {
 	}
 	if !cursorRowIs(m, "go") {
 		var dbg []string
-		for _, line := range strings.Split(m.View(), "\n") {
+		for _, line := range strings.Split(m.View().Content, "\n") {
 			dbg = append(dbg, fmt.Sprintf("%q", line))
 		}
 		t.Errorf("cursor should sit on the best match 'go', lines:\n%s", strings.Join(dbg, "\n"))
@@ -618,7 +617,7 @@ var ansiCodes = regexp.MustCompile("\x1b\\[[0-9;]*m")
 // cursorRowIs reports whether the view's cursor row shows the given choice,
 // ignoring ANSI codes around matched characters.
 func cursorRowIs(m Model, choice string) bool {
-	for _, line := range strings.Split(m.View(), "\n") {
+	for _, line := range strings.Split(m.View().Content, "\n") {
 		plain := ansiCodes.ReplaceAllString(line, "")
 		if strings.HasPrefix(plain, "> [ ] ") && strings.Contains(plain, choice) {
 			return true
@@ -668,6 +667,6 @@ func TestApplyFilterRankSurvivesCursorMotion(t *testing.T) {
 		t.Errorf("cursor = %d, want 0 (best match stays first)", m.cursor)
 	}
 	if !cursorRowIs(m, "go") {
-		t.Errorf("View() should still highlight 'go', got:\n%s", m.View())
+		t.Errorf("View() should still highlight 'go', got:\n%s", m.View().Content)
 	}
 }

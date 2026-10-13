@@ -302,7 +302,7 @@ func TestDownloadingModelShowsBackupNote(t *testing.T) {
 	// ...and the success view mentions the backup file.
 	updated, _ = m.Update(fetchEvent{done: true})
 	m = updated.(downloadingModel)
-	if view := m.View(); !strings.Contains(view, backupPath) {
+	if view := m.View().Content; !strings.Contains(view, backupPath) {
 		t.Errorf("success view should mention %s, got:\n%s", backupPath, view)
 	}
 }
@@ -311,7 +311,7 @@ func TestDownloadingModelOmitsBackupNoteWhenFresh(t *testing.T) {
 	m := newDownloadingModel([]string{"go"})
 	updated, _ := m.Update(fetchEvent{done: true})
 	m = updated.(downloadingModel)
-	if view := m.View(); strings.Contains(view, backupPath) {
+	if view := m.View().Content; strings.Contains(view, backupPath) {
 		t.Errorf("success view should not mention a backup when none was made:\n%s", view)
 	}
 }
