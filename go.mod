@@ -1,10 +1,10 @@
 module github.com/rubiin/ignit
 
-go 1.27.1
+go 1.27.2
 
 require (
 	github.com/charmbracelet/bubbles/v2 v2.2.1
-	github.com/charmbracelet/bubbletea/v2 v2.0.10
+	github.com/charmbracelet/bubbletea/v2 v2.1.0
 	github.com/charmbracelet/lipgloss/v2 v2.0.6
 	github.com/spf13/cobra v1.10.2
 )
