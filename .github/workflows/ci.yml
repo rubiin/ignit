@@ -24,7 +24,7 @@ jobs:
         uses: golangci/golangci-lint-action@v9
         with:
           # Pinned so lint rules don't shift under CI between runs.
-          version: v2.13.2
+          version: v2.15.0
 
       - name: Lint
         run: golangci-lint run
