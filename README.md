@@ -91,7 +91,7 @@ ignit completion powershell > ignit.ps1
 ```
 
 Keyboard shortcuts: `↑`/`↓` to move, type to filter, `space` to toggle an
-entry, `enter` to select, `ctrl+c` to quit.
+entry, `enter` to select, `ctrl+c` to quit the app.
 
 ## Building from source
 
